@@ -1,0 +1,116 @@
+Great foundational question. Let me break this down properly.
+
+## OHLCV → Trading Signal Pipeline
+
+Raw OHLCV data means nothing on its own. You **derive signals** from it through layers:
+
+---
+
+### Layer 1 — Price Action (Pure OHLCV Logic)
+
+Directly from candles, no indicators needed:
+
+```python
+# Bullish candle: Close > Open
+# Bearish candle: Close < Open
+
+df['candle'] = df['Close'] - df['Open']
+df['signal'] = df['candle'].apply(lambda x: 'BUY' if x > 0 else 'SELL')
+```
+
+But this alone is **noise**. You need structure.
+
+---
+
+### Layer 2 — Technical Indicators (Derived from OHLCV)
+
+| What you want to know | Indicator | Built from |
+|---|---|---|
+| Trend direction | SMA, EMA | Close |
+| Momentum | RSI, MACD | Close |
+| Volatility | Bollinger Bands, ATR | High, Low, Close |
+| Volume confirmation | OBV, VWAP | Volume + Close |
+
+```python
+import yfinance as yf
+import pandas as pd
+
+df = yf.download("RELIANCE.NS", period="6mo", interval="1d")
+
+# Trend
+df['EMA_20'] = df['Close'].ewm(span=20).mean()
+df['EMA_50'] = df['Close'].ewm(span=50).mean()
+
+# Momentum
+delta = df['Close'].diff()
+gain = delta.clip(lower=0).rolling(14).mean()
+loss = -delta.clip(upper=0).rolling(14).mean()
+df['RSI'] = 100 - (100 / (1 + gain / loss))
+
+# Signal Logic
+df['signal'] = 'HOLD'
+df.loc[(df['EMA_20'] > df['EMA_50']) & (df['RSI'] < 70), 'signal'] = 'BUY'
+df.loc[(df['EMA_20'] < df['EMA_50']) & (df['RSI'] > 30), 'signal'] = 'SELL'
+```
+
+---
+
+### Layer 3 — Signal Confirmation Framework
+
+A **good signal = multiple conditions agreeing**:
+
+```
+BUY when:
+  ✅ Trend  → EMA20 > EMA50 (uptrend)
+  ✅ Momentum → RSI between 40–60 (not overbought)
+  ✅ Volume  → Today's volume > 20-day avg volume (conviction)
+  ✅ Price   → Close > previous day High (breakout)
+```
+
+```python
+df['vol_avg'] = df['Volume'].rolling(20).mean()
+
+buy_condition = (
+    (df['EMA_20'] > df['EMA_50']) &          # Trend
+    (df['RSI'] > 40) & (df['RSI'] < 65) &    # Momentum
+    (df['Volume'] > df['vol_avg']) &           # Volume confirms
+    (df['Close'] > df['High'].shift(1))        # Breakout
+)
+
+df['signal'] = 'HOLD'
+df.loc[buy_condition, 'signal'] = 'BUY'
+```
+
+---
+
+### Layer 4 — The Real Answer (Mental Model)
+
+Think of it as **3 questions** every candle asks:
+
+```
+1. TREND   → Where is price going?  (EMA, SMA)
+2. MOMENTUM → How fast/strong?      (RSI, MACD)
+3. VOLUME   → Do participants agree? (OBV, Vol spike)
+```
+
+> **All 3 agree = high confidence signal**
+> **Only 1–2 agree = wait or skip**
+
+---
+
+### What's Next?
+
+From here you can go in 3 directions:
+
+- **Rule-based strategies** → MA Crossover, RSI divergence, Breakout (you're already doing MA Crossover)
+- **ML-based strategies** → Train a classifier on these features to predict BUY/SELL
+- **Statistical strategies** → Mean reversion, pairs trading, z-score based signals
+
+Which direction do you want to go deeper into?
+
+
+
+
+
+
+Question: what is live polling loop
